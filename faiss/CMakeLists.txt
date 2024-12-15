@@ -9,6 +9,7 @@ set(FAISS_SRC
   IVFlib.cpp
   Index.cpp
   Index2Layer.cpp
+  IndexACORN.cpp
   IndexAdditiveQuantizer.cpp
   IndexBinary.cpp
   IndexBinaryFlat.cpp
@@ -51,6 +52,7 @@ set(FAISS_SRC
   VectorTransform.cpp
   clone_index.cpp
   index_factory.cpp
+  impl/ACORN.cpp
   impl/AuxIndexStructures.cpp
   impl/CodePacker.cpp
   impl/IDSelector.cpp
@@ -103,6 +105,7 @@ set(FAISS_HEADERS
   IVFlib.h
   Index.h
   Index2Layer.h
+  IndexACORN.h
   IndexAdditiveQuantizer.h
   IndexBinary.h
   IndexBinaryFlat.h
@@ -146,6 +149,7 @@ set(FAISS_HEADERS
   clone_index.h
   index_factory.h
   index_io.h
+  impl/ACORN.h
   impl/AdditiveQuantizer.h
   impl/AuxIndexStructures.h
   impl/CodePacker.h

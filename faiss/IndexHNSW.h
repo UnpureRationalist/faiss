@@ -65,6 +65,13 @@ struct IndexHNSW : Index {
             idx_t* labels,
             const SearchParameters* params = nullptr) const override;
 
+    void search2hop(idx_t n,
+            const float* x,
+            idx_t k,
+            float* distances,
+            idx_t* labels,
+            const SearchParameters* params = nullptr);
+
     void range_search(
             idx_t n,
             const float* x,

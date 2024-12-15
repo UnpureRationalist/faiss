@@ -6,6 +6,21 @@
 add_executable(demo_imi_flat EXCLUDE_FROM_ALL demo_imi_flat.cpp)
 target_link_libraries(demo_imi_flat PRIVATE faiss)
 
+add_executable(hybrid_optim EXCLUDE_FROM_ALL hybrid_optim.cpp)
+target_link_libraries(hybrid_optim PRIVATE faiss)
+
+add_executable(nsg_sub_graph EXCLUDE_FROM_ALL nsg_sub_graph.cpp)
+target_link_libraries(nsg_sub_graph PRIVATE faiss)
+
+add_executable(sub_vs_all EXCLUDE_FROM_ALL sub_vs_all.cpp)
+target_link_libraries(sub_vs_all PRIVATE faiss)
+
+add_executable(work1_experiments EXCLUDE_FROM_ALL work1_experiments.cpp)
+target_link_libraries(work1_experiments PRIVATE faiss)
+
+add_executable(test_kmeans EXCLUDE_FROM_ALL test_kmeans.cpp)
+target_link_libraries(test_kmeans PRIVATE faiss)
+
 add_executable(demo_imi_pq EXCLUDE_FROM_ALL demo_imi_pq.cpp)
 target_link_libraries(demo_imi_pq PRIVATE faiss)
 

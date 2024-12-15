@@ -314,6 +314,29 @@ void IndexHNSW::search(
     }
 }
 
+void IndexHNSW::search2hop(
+        idx_t n,
+        const float* x,
+        idx_t k,
+        float* distances,
+        idx_t* labels,
+        const SearchParameters* params_in) {
+    // TODO(zjzhu): implement ACORN-1 search algorithm
+    FAISS_THROW_IF_NOT(k > 0);
+
+    using RH = HeapBlockResultHandler<HNSW::C>;
+    RH bres(n, distances, labels, k);
+
+    hnsw_search(this, n, x, bres, params_in);
+
+    if (is_similarity_metric(this->metric_type)) {
+        // we need to revert the negated distances
+        for (size_t i = 0; i < k * n; i++) {
+            distances[i] = -distances[i];
+        }
+    }
+}
+
 void IndexHNSW::range_search(
         idx_t n,
         const float* x,

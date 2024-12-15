@@ -50,6 +50,12 @@
 
 namespace faiss {
 
+enum Operation {
+    EQUAL = 0,
+    OR = 1,
+    REGEX = 2,
+};
+
 /// Forward declarations see impl/AuxIndexStructures.h, impl/IDSelector.h
 /// and impl/DistanceComputer.h
 struct IDSelector;

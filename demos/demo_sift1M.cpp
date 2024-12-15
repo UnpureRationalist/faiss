@@ -17,6 +17,8 @@
 
 #include <sys/time.h>
 
+#include <omp.h>
+
 #include <faiss/AutoTune.h>
 #include <faiss/index_factory.h>
 
@@ -78,7 +80,7 @@ int main() {
     double t0 = elapsed();
 
     // this is typically the fastest one.
-    const char* index_key = "IVF4096,Flat";
+    // const char* index_key = "IVF4096,Flat";
 
     // these ones have better memory usage
     // const char *index_key = "Flat";
@@ -89,6 +91,9 @@ int main() {
     // const char *index_key = "IMI2x8,PQ32";
     // const char *index_key = "IMI2x8,PQ8+16";
     // const char *index_key = "OPQ16_64,IMI2x8,PQ8+16";
+
+    // HNSW
+    const char* index_key = "HNSW64";
 
     faiss::Index* index;
 
@@ -163,50 +168,53 @@ int main() {
     // Result of the auto-tuning
     std::string selected_params;
 
-    { // run auto-tuning
+    // { // run auto-tuning
 
-        printf("[%.3f s] Preparing auto-tune criterion 1-recall at 1 "
-               "criterion, with k=%ld nq=%ld\n",
-               elapsed() - t0,
-               k,
-               nq);
+    //     printf("[%.3f s] Preparing auto-tune criterion 1-recall at 1 "
+    //            "criterion, with k=%ld nq=%ld\n",
+    //            elapsed() - t0,
+    //            k,
+    //            nq);
 
-        faiss::OneRecallAtRCriterion crit(nq, 1);
-        crit.set_groundtruth(k, nullptr, gt);
-        crit.nnn = k; // by default, the criterion will request only 1 NN
+    //     faiss::OneRecallAtRCriterion crit(nq, 1);
+    //     crit.set_groundtruth(k, nullptr, gt);
+    //     crit.nnn = k; // by default, the criterion will request only 1 NN
 
-        printf("[%.3f s] Preparing auto-tune parameters\n", elapsed() - t0);
+    //     printf("[%.3f s] Preparing auto-tune parameters\n", elapsed() - t0);
 
-        faiss::ParameterSpace params;
-        params.initialize(index);
+    //     faiss::ParameterSpace params;
+    //     params.initialize(index);
 
-        printf("[%.3f s] Auto-tuning over %ld parameters (%ld combinations)\n",
-               elapsed() - t0,
-               params.parameter_ranges.size(),
-               params.n_combinations());
+    //     printf("[%.3f s] Auto-tuning over %ld parameters (%ld
+    //     combinations)\n",
+    //            elapsed() - t0,
+    //            params.parameter_ranges.size(),
+    //            params.n_combinations());
 
-        faiss::OperatingPoints ops;
-        params.explore(index, nq, xq, crit, &ops);
+    //     faiss::OperatingPoints ops;
+    //     params.explore(index, nq, xq, crit, &ops);
 
-        printf("[%.3f s] Found the following operating points: \n",
-               elapsed() - t0);
+    //     printf("[%.3f s] Found the following operating points: \n",
+    //            elapsed() - t0);
 
-        ops.display();
+    //     ops.display();
 
-        // keep the first parameter that obtains > 0.5 1-recall@1
-        for (int i = 0; i < ops.optimal_pts.size(); i++) {
-            if (ops.optimal_pts[i].perf > 0.5) {
-                selected_params = ops.optimal_pts[i].key;
-                break;
-            }
-        }
-        assert(selected_params.size() >= 0 ||
-               !"could not find good enough op point");
-    }
-
+    //     // keep the first parameter that obtains > 0.5 1-recall@1
+    //     for (int i = 0; i < ops.optimal_pts.size(); i++) {
+    //         if (ops.optimal_pts[i].perf > 0.5) {
+    //             selected_params = ops.optimal_pts[i].key;
+    //             break;
+    //         }
+    //     }
+    //     assert(selected_params.size() >= 0 ||
+    //            !"could not find good enough op point");
+    // }
+    omp_set_num_threads(1);
     { // Use the found configuration to perform a search
 
         faiss::ParameterSpace params;
+
+        selected_params = "efSearch=128";
 
         printf("[%.3f s] Setting parameter configuration \"%s\" on index\n",
                elapsed() - t0,
