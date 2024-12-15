@@ -11,8 +11,15 @@
 
 #include <omp.h>
 
+#include <cassert>
 #include <cinttypes>
+#include <cstdio>
+#include <functional>
 #include <memory>
+#include <queue>
+#include <utility>
+#include <vector>
+#include "faiss/MetricType.h"
 
 #include <faiss/IndexFlat.h>
 #include <faiss/IndexNNDescent.h>
@@ -28,6 +35,17 @@ using namespace nsg;
 /**************************************************************
  * IndexNSG implementation
  **************************************************************/
+
+void IndexNSG::SetSubNsgParam(
+        Index** nsg,
+        const std::vector<int>& k_lst,
+        const std::vector<int>& presum) {
+    this->build_type = 2;
+    this->sub_nsg = nsg;
+    this->sub_nsg_num = k_lst.size();
+    this->sub_graphs_k = k_lst;
+    this->sub_graphs_presum = presum;
+}
 
 IndexNSG::IndexNSG(int d, int R, MetricType metric) : Index(d, metric), nsg(R) {
     nndescent_L = GK + 50;
@@ -122,6 +140,52 @@ void IndexNSG::build(idx_t n, const float* x, idx_t* knn_graph, int GK_2) {
     is_built = true;
 }
 
+/**
+    sub-graph id -> merged id
+    merged_id = num * sub_graph_id + labels[i]
+ */
+inline void merge_sub_graph_search_res(
+        faiss::idx_t id,
+        const std::vector<std::vector<faiss::idx_t>>& labels,
+        const std::vector<std::vector<float>>& distances,
+        faiss::idx_t* dest,
+        int k,
+        const std::vector<int> sub_graphs_k,
+        const std::vector<int>& presums) {
+    int sub_graph_num = labels.size();
+    std::vector<int> offsets = sub_graphs_k;
+    for (int& offset : offsets) {
+        offset *= id;
+    }
+    // distance, label, idx of element, idx of sub-graph
+    std::priority_queue<
+            std::tuple<float, faiss::idx_t, int, int>,
+            std::vector<std::tuple<float, faiss::idx_t, int, int>>,
+            std::greater<std::tuple<float, faiss::idx_t, int, int>>>
+            q;
+    for (int i = 0; i < sub_graph_num; ++i) {
+        q.emplace(distances[i][offsets[i]], labels[i][offsets[i]], 0, i);
+    }
+    int count = 0;
+    while (count < k) {
+        auto [distance, inner_id, idx, sub_graph_idx] = q.top();
+        q.pop();
+        int next_idx = idx + 1;
+        if (next_idx < sub_graphs_k[sub_graph_idx]) {
+            q.emplace(
+                    distances[sub_graph_idx][offsets[sub_graph_idx] + next_idx],
+                    labels[sub_graph_idx][offsets[sub_graph_idx] + next_idx],
+                    next_idx,
+                    sub_graph_idx);
+        }
+        faiss::idx_t real_id = presums[sub_graph_idx] + inner_id;
+        if (real_id == id) {
+            continue;
+        }
+        dest[count++] = real_id;
+    }
+}
+
 void IndexNSG::add(idx_t n, const float* x) {
     FAISS_THROW_IF_NOT_MSG(
             storage,
@@ -210,6 +274,53 @@ void IndexNSG::add(idx_t n, const float* x) {
         for (idx_t i = 0; i < ntotal * GK; i++) {
             knng[i] = knn_graph[i];
         }
+    } else if (build_type == 2) { // get knn neighbours by searcning on NSG
+                                  // sub-graph
+        storage->add(n, x);
+        ntotal = storage->ntotal;
+        FAISS_THROW_IF_NOT(ntotal == n);
+        printf("get knn neighbours by searching on sub-NSG\n");
+        printf("In KNN Graph: GK = %d\n", GK);
+
+        std::vector<std::vector<idx_t>> sub_graph_search_res(this->sub_nsg_num);
+        std::vector<std::vector<float>> sub_graph_search_dis(this->sub_nsg_num);
+        // idx_t sub_nsg_k = std::max(GK / 4, 1);
+        // idx_t n_mult_k = sub_nsg_k * n;
+#pragma omp parallel for
+        for (int i = 0; i < this->sub_nsg_num; ++i) {
+            int len = sub_graphs_k[i] * n;
+            sub_graph_search_res[i].resize(len);
+            sub_graph_search_dis[i].resize(len);
+        }
+        printf("start searching on sub-NSG...\n");
+        for (int i = 0; i < this->sub_nsg_num; ++i) {
+            printf("sub-nsg: %d total: %d \n", i, this->sub_nsg_num);
+            sub_nsg[i]->search(
+                    n,
+                    x,
+                    sub_graphs_k[i],
+                    sub_graph_search_dis[i].data(),
+                    sub_graph_search_res[i].data());
+        }
+
+        printf("search on sub-NSG over. start build NSG...\n");
+
+        knng.resize(ntotal * GK);
+
+#pragma omp parallel for
+        for (idx_t i = 0; i < n; ++i) {
+            merge_sub_graph_search_res(
+                    i,
+                    sub_graph_search_res,
+                    sub_graph_search_dis,
+                    knng.data() + i * GK,
+                    GK,
+                    this->sub_graphs_k,
+                    this->sub_graphs_presum);
+        }
+
+        printf("merge sub-NSG result over, start build NSG from KNN graph\n");
+
     } else {
         FAISS_THROW_MSG("build_type should be 0 or 1");
     }

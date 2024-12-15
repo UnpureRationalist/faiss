@@ -40,6 +40,7 @@ struct IndexNSG : Index {
     /// indicate how to build a knn graph
     /// - 0: build NSG with brute force search
     /// - 1: build NSG with NNDescent
+    /// - 2: build NSG with sub-NSG
     char build_type = 0;
 
     /// parameters for nndescent
@@ -47,6 +48,14 @@ struct IndexNSG : Index {
     int nndescent_R = 100;
     int nndescent_L; // set to GK + 50
     int nndescent_iter = 10;
+
+    /// parameters for searching on sub-NSG
+    Index** sub_nsg = nullptr;
+    int sub_nsg_num = 0;
+    std::vector<int> sub_graphs_k;
+    std::vector<int> sub_graphs_presum;
+
+    void SetSubNsgParam(Index** nsg, const std::vector<int>& k_lst, const std::vector<int> &presum);
 
     explicit IndexNSG(int d = 0, int R = 32, MetricType metric = METRIC_L2);
     explicit IndexNSG(Index* storage, int R = 32);
