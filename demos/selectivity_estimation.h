@@ -367,9 +367,10 @@ class ClusterScalarHistogram : public Histogram {
             clusters[cluster_id].emplace_back(sampled_scalars[i]);
         }
 
-        for (const auto& cluster : clusters) {
-            printf("size = %ld, total = %ld\n", cluster.size(), sample_count);
-        }
+        // for (const auto& cluster : clusters) {
+        //     printf("size = %ld, total = %ld\n", cluster.size(),
+        //     sample_count);
+        // }
         histograms_.reserve(k);
         for (const auto& cluster : clusters) {
             histograms_.emplace_back(
