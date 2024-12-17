@@ -361,12 +361,35 @@ class ClusterScalarHistogram : public Histogram {
                 labels.data());
 
         std::vector<std::vector<int>> clusters(k);
+
+        for (int i = 0; i < sample_count; ++i) {
+            int cluster_id = labels[i];
+            clusters[cluster_id].emplace_back(sampled_scalars[i]);
+        }
+
+        for (const auto& cluster : clusters) {
+            printf("size = %ld, total = %ld\n", cluster.size(), sample_count);
+        }
+        histograms_.reserve(k);
+        for (const auto& cluster : clusters) {
+            histograms_.emplace_back(
+                    cluster,
+                    1.0,
+                    std::min(b, static_cast<int>(cluster.size())));
+        }
     }
 
     virtual double EstimateSelectivity(
             const std::pair<int, int>& filter,
             const float* x) const {
-        return 1.0;
+        faiss::idx_t label;
+        float distance;
+        index_.search(1, x, 1, &distance, &label);
+        if (label < 0 || label >= histograms_.size()) {
+            printf("Error when query vector!\n");
+            abort();
+        }
+        return histograms_[label].EstimateSelectivity(filter);
     }
 
    private:
