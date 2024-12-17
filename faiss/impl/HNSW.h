@@ -202,6 +202,12 @@ struct HNSW {
             VisitedTable& vt,
             const SearchParametersHNSW* params = nullptr) const;
 
+    HNSWStats search_2_hop(
+            DistanceComputer& qdis,
+            ResultHandler<C>& res,
+            VisitedTable& vt,
+            const SearchParametersHNSW* params = nullptr) const;
+
     /// search only in level 0 from a given vertex
     void search_level_0(
             DistanceComputer& qdis,

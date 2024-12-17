@@ -6,8 +6,13 @@
 add_executable(demo_imi_flat EXCLUDE_FROM_ALL demo_imi_flat.cpp)
 target_link_libraries(demo_imi_flat PRIVATE faiss)
 
-add_executable(hybrid_optim EXCLUDE_FROM_ALL hybrid_optim.cpp)
-target_link_libraries(hybrid_optim PRIVATE faiss)
+find_package(OpenMP REQUIRED)
+find_package(roaring REQUIRED)
+
+add_executable(work2_hybrid_optim EXCLUDE_FROM_ALL work2_hybrid_optim.cpp)
+target_link_libraries(work2_hybrid_optim PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(work2_hybrid_optim PRIVATE faiss)
+target_link_libraries(work2_hybrid_optim PUBLIC roaring::roaring)
 
 add_executable(nsg_sub_graph EXCLUDE_FROM_ALL nsg_sub_graph.cpp)
 target_link_libraries(nsg_sub_graph PRIVATE faiss)
@@ -20,6 +25,9 @@ target_link_libraries(work1_experiments PRIVATE faiss)
 
 add_executable(test_kmeans EXCLUDE_FROM_ALL test_kmeans.cpp)
 target_link_libraries(test_kmeans PRIVATE faiss)
+
+add_executable(gen_hybrid_data EXCLUDE_FROM_ALL gen_hybrid_data.cpp)
+target_link_libraries(gen_hybrid_data PRIVATE faiss)
 
 add_executable(demo_imi_pq EXCLUDE_FROM_ALL demo_imi_pq.cpp)
 target_link_libraries(demo_imi_pq PRIVATE faiss)
