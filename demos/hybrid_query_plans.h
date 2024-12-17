@@ -421,3 +421,13 @@ inline HybridQueryResult PlanEACORNBitmapFilter(
     double recall = dataset.GetRecall(labels.data(), k);
     return {qps, recall};
 }
+
+// Plan F:
+// cost-based query optimization
+inline HybridQueryResult PlanFCostBased(
+        const HybridDataset& dataset,
+        faiss::Index* index_general,
+        const Histogram& histogram,
+        double rate) {
+    return {0, 0};
+}

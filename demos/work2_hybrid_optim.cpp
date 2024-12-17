@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
     dataset.ShowInfo();
 
     std::string index_key = "HNSW"; // "NSG"  "HNSW64"
-    if (dataset_name == "GIST") {
+    if (dataset_name == "GIST" || dataset_name == "SIFT") {
         index_key = "HNSW64";
     }
 
@@ -83,37 +83,39 @@ int main(int argc, char* argv[]) {
         delete[] D;
     }
 
+    // return 0;
+
     const double rate = 40.0;
 
     // do hybird query
     {
-        printf("do hybrid query using pre-filtering plan A...\n");
+        // printf("do hybrid query using pre-filtering plan A...\n");
 
-        HybridQueryResult result = PlanAPreFilter(dataset);
+        // HybridQueryResult result = PlanAPreFilter(dataset);
 
-        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
 
     {
-        printf("do hybrid query using post-filtering plan B...\n");
+        // printf("do hybrid query using post-filtering plan B...\n");
 
-        PrioriKnowledgeHistogram histogram(1, 10000);
+        // PrioriKnowledgeHistogram histogram(1, 10000);
 
-        HybridQueryResult result =
-                PlanBPostFilter(dataset, index, histogram, 1);
+        // HybridQueryResult result =
+        //         PlanBPostFilter(dataset, index, histogram, 1);
 
-        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
 
     {
-        printf("do hybrid query using bitmap and vector index plan C...\n");
+        // printf("do hybrid query using bitmap and vector index plan C...\n");
 
-        PrioriKnowledgeHistogram histogram(1, 10000);
+        // PrioriKnowledgeHistogram histogram(1, 10000);
 
-        HybridQueryResult result =
-                PlanCVectorIndexBitmapFilter(dataset, index, histogram, rate);
+        // HybridQueryResult result =
+        //         PlanCVectorIndexBitmapFilter(dataset, index, histogram, rate);
 
-        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
 
     {

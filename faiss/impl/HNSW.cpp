@@ -795,6 +795,20 @@ int search_from_candidates_2_hop(
                 if (pass_filter_neighbours.size() >= efConstruction) {
                     break;
                 }
+            }
+
+            if (!sel) {
+                prefetch_L2(vt.visited.data() + v1);
+            }
+            jmax += 1;
+        }
+
+        if (sel && pass_filter_neighbours.size() < efConstruction) {
+            for (size_t j = begin; j < end; j++) {
+                int v1 = hnsw.neighbors[j];
+                if (v1 < 0)
+                    break;
+
                 size_t hop2begin, hop2end;
                 hnsw.neighbor_range(v1, level, &hop2begin, &hop2end);
                 for (size_t k = hop2begin; k < hop2end; ++k) {
@@ -816,11 +830,6 @@ int search_from_candidates_2_hop(
                     break;
                 }
             }
-
-            if (!sel) {
-                prefetch_L2(vt.visited.data() + v1);
-            }
-            jmax += 1;
         }
 
         int counter = 0;
