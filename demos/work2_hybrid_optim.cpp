@@ -17,6 +17,9 @@
 #include <faiss/index_factory.h>
 
 int main(int argc, char* argv[]) {
+    const double sample_rate = 0.2;
+    const int buckets = 500;
+
     double t0 = elapsed();
 
     const std::string dataset_name(argv[1]);
@@ -85,46 +88,43 @@ int main(int argc, char* argv[]) {
 
     // return 0;
 
-    const double rate = 40.0;
+    const double search_l_rate = 40.0;
 
     // do hybird query
     {
-        // printf("do hybrid query using pre-filtering plan A...\n");
+        printf("do hybrid query using pre-filtering plan A...\n");
 
-        // HybridQueryResult result = PlanAPreFilter(dataset);
+        HybridQueryResult result = PlanAPreFilter(dataset);
 
-        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+    }
+
+    SingleColumnEqualHeightHistogram global_histogram(
+            dataset.GetScalars(), sample_rate, buckets);
+
+    {
+        printf("do hybrid query using post-filtering plan B...\n");
+
+        HybridQueryResult result =
+                PlanBPostFilter(dataset, index, global_histogram, 1);
+
+        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
 
     {
-        // printf("do hybrid query using post-filtering plan B...\n");
+        printf("do hybrid query using bitmap and vector index plan C...\n");
 
-        // PrioriKnowledgeHistogram histogram(1, 10000);
+        HybridQueryResult result = PlanCVectorIndexBitmapFilter(
+                dataset, index, global_histogram, search_l_rate);
 
-        // HybridQueryResult result =
-        //         PlanBPostFilter(dataset, index, histogram, 1);
-
-        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
-    }
-
-    {
-        // printf("do hybrid query using bitmap and vector index plan C...\n");
-
-        // PrioriKnowledgeHistogram histogram(1, 10000);
-
-        // HybridQueryResult result =
-        //         PlanCVectorIndexBitmapFilter(dataset, index, histogram, rate);
-
-        // printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
 
     {
         printf("do hybrid query using predicate filter and vector index plan D...\n");
 
-        PrioriKnowledgeHistogram histogram(1, 10000);
-
         HybridQueryResult result = PlanDVectorIndexPredicateFilter(
-                dataset, index, histogram, rate);
+                dataset, index, global_histogram, search_l_rate);
 
         printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }
@@ -132,10 +132,46 @@ int main(int argc, char* argv[]) {
     {
         printf("do hybrid query using ACORN plan E...\n");
 
-        PrioriKnowledgeHistogram histogram(1, 10000);
+        HybridQueryResult result = PlanEACORNRangeFilter(
+                dataset, index, global_histogram, search_l_rate);
+
+        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+    }
+
+    // Cost-based Optimization
+    {
+        printf("do hybrid query using cost-based plan F...\n");
+
+        ClusterScalarHistogram cluster_histogram = ClusterScalarHistogram(
+                dataset.GetBaseNum(),
+                sample_rate,
+                dataset.GetDimension(),
+                dataset.GetBaseVectors(),
+                dataset.GetScalars(),
+                200,
+                buckets);
+
+        printf("build histogram over!\n");
+
+        HybridQueryResult result = PlanFCostBased(
+                dataset,
+                index,
+                global_histogram,
+                cluster_histogram,
+                search_l_rate);
+
+        printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
+    }
+
+    // AnalyticDB
+    {
+        printf("do hybrid query using AnalyticDB plan...\n");
+
+        SingleColumnEqualHeightHistogram histogram(
+                dataset.GetScalars(), sample_rate, buckets);
 
         HybridQueryResult result =
-                PlanEACORNBitmapFilter(dataset, index, histogram, rate);
+                AnalyticDBVPlan(dataset, index, histogram, search_l_rate);
 
         printf("qps = %lf, recall = %lf\n", result.qps, result.recall);
     }

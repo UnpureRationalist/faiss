@@ -17,6 +17,10 @@ target_link_libraries(work2_hybrid_optim PRIVATE roaring::roaring)
 add_executable(test_histogram EXCLUDE_FROM_ALL test_histogram.cpp)
 target_link_libraries(test_histogram PRIVATE faiss)
 
+add_executable(work2_get_cost EXCLUDE_FROM_ALL work2_get_cost.cpp)
+target_link_libraries(work2_get_cost PRIVATE faiss)
+target_link_libraries(work2_get_cost PRIVATE roaring::roaring)
+
 add_executable(nsg_sub_graph EXCLUDE_FROM_ALL nsg_sub_graph.cpp)
 target_link_libraries(nsg_sub_graph PRIVATE faiss)
 

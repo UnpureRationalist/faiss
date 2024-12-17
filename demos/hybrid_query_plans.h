@@ -3,9 +3,11 @@
 #include <omp.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <queue>
+#include <utility>
 #include <vector>
 #include "demos/file_reader.h"
 #include "faiss/Index.h"
@@ -381,7 +383,7 @@ inline void plan_e(
 
 // 执行计划 E:
 // ACORN-1 算法
-inline HybridQueryResult PlanEACORNBitmapFilter(
+inline HybridQueryResult PlanEACORNRangeFilter(
         const HybridDataset& dataset,
         faiss::Index* index_general,
         const Histogram& histogram,
@@ -391,14 +393,9 @@ inline HybridQueryResult PlanEACORNBitmapFilter(
         printf("ACORN only support HNSW!\n");
         abort();
     }
-    const int n = dataset.GetBaseNum();
+
     const int nq = dataset.GetNumQuery();
     const int k = dataset.GetK();
-    const int d = dataset.GetDimension();
-    const std::vector<std::pair<int, int>>& queries = dataset.GetQueryFilters();
-    const std::vector<int>& scalars = dataset.GetScalars();
-
-    const float* query_vectors = dataset.GetQueryVectors();
 
     std::vector<faiss::idx_t> labels(nq * k);
     std::vector<float> distances(nq * k);
@@ -422,12 +419,236 @@ inline HybridQueryResult PlanEACORNBitmapFilter(
     return {qps, recall};
 }
 
+// cost factors
+static constexpr double cost_scalar_index_search = 1e-5;
+static constexpr double cost_predicate_filter = 1e-6;
+static constexpr double cost_distance_computing = 1.819414;
+static constexpr double cost_bitmap_insert = 10.657087;
+static constexpr double cost_bitmap_search = 16.448377;
+
+// 全局谓词选择率
+inline double cost_plan_a(double selectivity, int n) {
+    return cost_scalar_index_search + selectivity * n * cost_distance_computing;
+}
+
+// 全局 or 聚类谓词选择率
+inline double cost_plan_b(double selectivity, int n, int search_k) {
+    return (std::log10(n) + search_k) * cost_distance_computing +
+            search_k * cost_predicate_filter;
+}
+
+// 全局谓词选择率
+inline double cost_plan_c(double selectivity, int n, int search_k) {
+    return cost_scalar_index_search + selectivity * n * cost_bitmap_insert +
+            (std::log10(n) + search_k) *
+            (cost_distance_computing + cost_bitmap_search);
+}
+
+inline double cost_plan_d(int n, int search_k) {
+    return (std::log10(n) + search_k) *
+            (cost_distance_computing + cost_predicate_filter);
+}
+
+inline double cost_plan_e(int n, int search_k, int m) {
+    return (std::log10(n) + search_k) * cost_distance_computing +
+            m * std::log10(n) * cost_predicate_filter;
+}
+
 // Plan F:
-// cost-based query optimization
+// cost-based query optimization + cluster histogram
 inline HybridQueryResult PlanFCostBased(
         const HybridDataset& dataset,
-        faiss::Index* index_general,
+        faiss::Index* index,
+        const Histogram& global_histogram,
+        const ClusterScalarHistogram& cluster_histogram,
+        double rate) {
+    const int n = dataset.GetBaseNum();
+    const int d = dataset.GetDimension();
+    const int nq = dataset.GetNumQuery();
+    const int k = dataset.GetK();
+
+    const auto hnsw = dynamic_cast<faiss::IndexHNSW*>(index);
+    if (!hnsw) {
+        printf("index must be hnsw!\n");
+        abort();
+    }
+    const int m = hnsw->hnsw.efConstruction;
+
+    const std::vector<std::pair<int, int>>& queries = dataset.GetQueryFilters();
+    const float* query_vectors = dataset.GetQueryVectors();
+
+    std::vector<faiss::idx_t> labels(nq * k);
+    std::vector<float> distances(nq * k);
+    // printf("start query plan F:\n");
+    double start = elapsed();
+
+#pragma omp parallel for
+    for (int q = 0; q < nq; ++q) {
+        faiss::idx_t* label = labels.data() + q * k;
+        float* distance = distances.data() + q * k;
+
+        // printf("query = %d\n", q);
+        double global_sel = global_histogram.EstimateSelectivity(queries[q]);
+        double cluster_sel = cluster_histogram.EstimateSelectivity(
+                queries[q], query_vectors + q * d);
+
+        int k_adjust =
+                rate * 1.0 * k / (cluster_sel < 1e-4 ? 1e-4 : cluster_sel);
+        int search_l = rate * k;
+
+        // rule-based optimization
+        if (global_sel * n <= k) {
+            plan_a(q, dataset, label);
+            // printf("q = %d, global_sel = %lf, cluster_sel = %lf, plan =
+            // %c\n",
+            //        q,
+            //        global_sel,
+            //        cluster_sel,
+            //        'A');
+            continue;
+        }
+        if (cluster_sel >= 0.999 && global_sel <= cluster_sel) {
+            plan_b(q, dataset, index, k_adjust, k_adjust, label);
+            // printf("q = %d, global_sel = %lf, cluster_sel = %lf, plan =
+            // %c\n",
+            //        q,
+            //        global_sel,
+            //        cluster_sel,
+            //        'B');
+            continue;
+        }
+
+        std::vector<std::pair<double, int>> cost2plan(5);
+
+        cost2plan[0] = {cost_plan_a(global_sel, n), 0};
+        cost2plan[1] = {cost_plan_b(cluster_sel, n, k_adjust), 1};
+        cost2plan[2] = {cost_plan_c(global_sel, n, search_l), 2};
+        cost2plan[3] = {cost_plan_d(n, search_l), 3};
+        cost2plan[4] = {cost_plan_e(n, search_l, m), 4};
+
+        double min_cost = cost2plan[0].first;
+        int idx = 0;
+        for (int i = 1; i < 5; ++i) {
+            if (i == 1 && k_adjust > 100000) {
+                continue;
+            }
+            if (cost2plan[i].first < min_cost) {
+                min_cost = cost2plan[i].first;
+                idx = i;
+            }
+        }
+
+        // printf("q = %d, global_sel = %lf, cluster_sel = %lf, plan = %c\n",
+        //        q,
+        //        global_sel,
+        //        cluster_sel,
+        //        'A' + idx);
+
+        switch (idx) {
+            case 0:
+                plan_a(q, dataset, label);
+                break;
+            case 1:
+                plan_b(q, dataset, index, k_adjust, k_adjust, label);
+                break;
+            case 2:
+                plan_c(q, dataset, index, search_l, label, distance);
+                break;
+            case 3:
+                plan_d(q, dataset, index, search_l, label, distance);
+                break;
+            case 4:
+                plan_e(q, dataset, index, search_l, label, distance);
+                break;
+            default:
+                // unreachable
+                break;
+        }
+    }
+
+    double end = elapsed();
+    double qps = 1.0 * nq / (end - start);
+    double recall = dataset.GetRecall(labels.data(), k);
+    return {qps, recall};
+}
+
+// 模拟 AnalyticDB-V 的执行计划
+// 从 A, B, C 中选择代价最低的执行计划
+inline HybridQueryResult AnalyticDBVPlan(
+        const HybridDataset& dataset,
+        faiss::Index* index,
         const Histogram& histogram,
         double rate) {
-    return {0, 0};
+    const int n = dataset.GetBaseNum();
+    const int d = dataset.GetDimension();
+    const int nq = dataset.GetNumQuery();
+    const int k = dataset.GetK();
+
+    const std::vector<std::pair<int, int>>& queries = dataset.GetQueryFilters();
+    const float* query_vectors = dataset.GetQueryVectors();
+
+    std::vector<faiss::idx_t> labels(nq * k);
+    std::vector<float> distances(nq * k);
+    // printf("start query plan F:\n");
+    double start = elapsed();
+
+#pragma omp parallel for
+    for (int q = 0; q < nq; ++q) {
+        faiss::idx_t* label = labels.data() + q * k;
+        float* distance = distances.data() + q * k;
+
+        // printf("query = %d\n", q);
+        double global_sel = histogram.EstimateSelectivity(queries[q]);
+
+        int k_adjust = rate * 1.0 * k / (global_sel < 1e-4 ? 1e-4 : global_sel);
+        int search_l = rate * k;
+
+        // rule-based optimization
+        if (global_sel * n <= k) {
+            plan_a(q, dataset, label);
+            continue;
+        }
+        if (global_sel >= 0.999) {
+            plan_b(q, dataset, index, k_adjust, k_adjust, label);
+            continue;
+        }
+
+        std::vector<std::pair<double, int>> cost2plan(3);
+
+        cost2plan[0] = {cost_plan_a(global_sel, n), 0};
+        cost2plan[1] = {cost_plan_b(global_sel, n, k_adjust), 1};
+        cost2plan[2] = {cost_plan_c(global_sel, n, search_l), 2};
+
+        double min_cost = cost2plan[0].first;
+        int idx = 0;
+        for (int i = 1; i < 3; ++i) {
+            if (i == 1 && k_adjust > 100000) {
+                continue;
+            }
+            if (cost2plan[i].first < min_cost) {
+                min_cost = cost2plan[i].first;
+                idx = i;
+            }
+        }
+
+        switch (idx) {
+            case 0:
+                plan_a(q, dataset, label);
+                break;
+            case 1:
+                plan_b(q, dataset, index, k_adjust, k_adjust, label);
+                break;
+            case 2:
+                plan_c(q, dataset, index, search_l, label, distance);
+                break;
+            default:
+                // unreachable
+                break;
+        }
+    }
+
+    double end = elapsed();
+    double qps = 1.0 * nq / (end - start);
+    double recall = dataset.GetRecall(labels.data(), k);
+    return {qps, recall};
 }

@@ -71,6 +71,8 @@ inline std::vector<int> Sample(const std::vector<int>& scalars, double rate) {
     size_t n = scalars.size();
     size_t sample_count = static_cast<size_t>(n * rate);
 
+    // printf("sample_count = %ld\n", sample_count);
+
     std::vector<int> indices = get_sample_indices(n, sample_count);
 
     std::vector<int> sampled_elements;
@@ -125,7 +127,7 @@ class SingleColumnEqualHeightHistogram : public Histogram {
 
     inline int BinarySearch(int value) const {
         int low = 0;
-        int high = histogram_data_.size();
+        int high = histogram_data_.size() - 1;
         while (low <= high) {
             int mid = low + (high - low) / 2;
             if (value >= histogram_data_[mid].low &&
@@ -203,7 +205,7 @@ class SingleColumnEqualHeightHistogram : public Histogram {
             throw std::invalid_argument(
                     "Number of buckets less than number of sampled elements.");
         }
-
+        // printf("n = %d, b = %d\n", n, b);
         int avg_bucket_size = n / b;
         std::vector<int> buckets_size_lst(b, avg_bucket_size);
         {
@@ -229,6 +231,7 @@ class SingleColumnEqualHeightHistogram : public Histogram {
 
         int left = 0;
         int bucket_idx = 0;
+        // printf("do split bucket...\n");
         while (left < n && bucket_idx < b) {
             if (bucket_idx + 1 == b) {
                 double rate = 1.0 * (n - left) / n;
@@ -275,6 +278,7 @@ class SingleColumnEqualHeightHistogram : public Histogram {
             left = right_idx + 1;
             ++bucket_idx;
         }
+        // printf("split bucket over!\n");
 
         // for (const Bucket& bucket : histogram_data_) {
         //     bucket.Show();
@@ -283,11 +287,12 @@ class SingleColumnEqualHeightHistogram : public Histogram {
 
         // calculate pre-sum rate
         int nb = histogram_data_.size();
+        // printf("nb = %d\n", nb);
         presum_rate_.resize(nb + 1, 0.0);
         for (int i = 1; i <= nb; ++i) {
             presum_rate_[i] = presum_rate_[i - 1] + histogram_data_[i - 1].rate;
         }
-
+        // printf("presum over!\n");
         // for (const double& rate : presum_rate_) {
         //     printf("%lf ", rate);
         // }
@@ -345,12 +350,12 @@ class ClusterScalarHistogram : public Histogram {
         std::vector<float> centroids(k * d);
         faiss::kmeans_clustering(
                 d, sample_count, k, sampled_vectors.data(), centroids.data());
-
+        // printf("Cluster over!\n");
         // build IndexFlat
         index_ = faiss::IndexFlatL2(d);
         index_.add(k, centroids.data());
-
-        std::vector<faiss::idx_t> labels(n * 1);
+        // printf("add centroids over!\n");
+        std::vector<faiss::idx_t> labels(n);
         std::vector<float> distances(n);
 
         index_.search(
@@ -359,7 +364,7 @@ class ClusterScalarHistogram : public Histogram {
                 1,
                 distances.data(),
                 labels.data());
-
+        // printf("search centroids over!\n");
         std::vector<std::vector<int>> clusters(k);
 
         for (int i = 0; i < sample_count; ++i) {
@@ -372,11 +377,11 @@ class ClusterScalarHistogram : public Histogram {
         //     sample_count);
         // }
         histograms_.reserve(k);
-        for (const auto& cluster : clusters) {
+        for (int i = 0; i < k; ++i) {
             histograms_.emplace_back(
-                    cluster,
+                    clusters[i],
                     1.0,
-                    std::min(b, static_cast<int>(cluster.size())));
+                    std::min(b, static_cast<int>(clusters[i].size())));
         }
     }
 
