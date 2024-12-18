@@ -206,6 +206,19 @@ struct BitMapSelector : public faiss::IDSelector {
     }
 };
 
+struct BitMapVectorSelector : public faiss::IDSelector {
+   private:
+    const std::vector<bool>* bitmap_;
+
+   public:
+    explicit BitMapVectorSelector(std::vector<bool>* bitmap)
+            : bitmap_(bitmap) {}
+
+    bool is_member(faiss::idx_t id) const override {
+        return (*bitmap_)[id];
+    }
+};
+
 // Plan C
 inline void plan_c(
         int q,
@@ -225,13 +238,13 @@ inline void plan_c(
     auto [low, high] = dataset.ScalarIndexFilter(queries[q]);
     int legal_size = high - low;
 
-    RoaringBitmap bitmap(legal_size);
+    std::vector<bool> bitmap(dataset.GetBaseNum(), false);
 
     for (int i = low; i != high; ++i) {
-        bitmap.add(scalar2idx[i].second);
+        bitmap[scalar2idx[i].second] = true;
     }
 
-    BitMapSelector bitmap_sel(&bitmap);
+    BitMapVectorSelector bitmap_sel(&bitmap);
 
     faiss::SearchParametersHNSW hnsw_search_param;
     hnsw_search_param.efSearch = search_l;
@@ -421,10 +434,10 @@ inline HybridQueryResult PlanEACORNRangeFilter(
 
 // cost factors
 static constexpr double cost_scalar_index_search = 1e-5;
-static constexpr double cost_predicate_filter = 1e-6;
+static constexpr double cost_predicate_filter = 1e-7;
 static constexpr double cost_distance_computing = 1.819414;
-static constexpr double cost_bitmap_insert = 10.657087;
-static constexpr double cost_bitmap_search = 16.448377;
+static constexpr double cost_bitmap_insert = 1.82;
+static constexpr double cost_bitmap_search = 1e-7;
 
 // 全局谓词选择率
 inline double cost_plan_a(double selectivity, int n) {
@@ -449,9 +462,9 @@ inline double cost_plan_d(int n, int search_k) {
             (cost_distance_computing + cost_predicate_filter);
 }
 
-inline double cost_plan_e(int n, int search_k, int m) {
-    return (std::log10(n) + search_k) * cost_distance_computing +
-            m * std::log10(n) * cost_predicate_filter;
+inline double cost_plan_e(int n, int k, int search_k, int m) {
+    return (std::log10(n) + k) * cost_distance_computing +
+            m * (std::log10(n) + search_k) * cost_predicate_filter;
 }
 
 // Plan F:
@@ -524,7 +537,7 @@ inline HybridQueryResult PlanFCostBased(
         cost2plan[1] = {cost_plan_b(cluster_sel, n, k_adjust), 1};
         cost2plan[2] = {cost_plan_c(global_sel, n, search_l), 2};
         cost2plan[3] = {cost_plan_d(n, search_l), 3};
-        cost2plan[4] = {cost_plan_e(n, search_l, m), 4};
+        cost2plan[4] = {cost_plan_e(n, k, search_l, m), 4};
 
         double min_cost = cost2plan[0].first;
         int idx = 0;

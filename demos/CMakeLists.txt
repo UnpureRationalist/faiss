@@ -21,6 +21,13 @@ add_executable(work2_get_cost EXCLUDE_FROM_ALL work2_get_cost.cpp)
 target_link_libraries(work2_get_cost PRIVATE faiss)
 target_link_libraries(work2_get_cost PRIVATE roaring::roaring)
 
+add_executable(work2_cmp_histogram EXCLUDE_FROM_ALL work2_cmp_histogram.cpp)
+target_link_libraries(work2_cmp_histogram PRIVATE faiss)
+
+add_executable(work2_plans_recall_cmp EXCLUDE_FROM_ALL work2_plans_recall_cmp.cpp)
+target_link_libraries(work2_plans_recall_cmp PRIVATE faiss)
+target_link_libraries(work2_plans_recall_cmp PRIVATE roaring::roaring)
+
 add_executable(nsg_sub_graph EXCLUDE_FROM_ALL nsg_sub_graph.cpp)
 target_link_libraries(nsg_sub_graph PRIVATE faiss)
 

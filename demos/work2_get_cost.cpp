@@ -17,9 +17,9 @@
 #include <vector>
 
 int main() {
-    constexpr int TOTAL = 1'000'000'000;
+    constexpr int TOTAL = 100'000'000;
 
-    const std::string dataset_name = "SIFT";
+    const std::string dataset_name = "GIST";
     HybridDataset dataset(dataset_name);
 
     // cost_scalar_index_search
@@ -32,6 +32,7 @@ int main() {
         Timer timer("cost_scalar_index_search");
 
         for (int i = 0; i < TOTAL; ++i) {
+            filter = {i, i + 10};
             tmp = dataset.ScalarIndexFilter(filter);
         }
     }
@@ -48,7 +49,8 @@ int main() {
         Timer timer("cost_predicate_calculate");
 
         for (int i = 0; i < TOTAL; ++i) {
-            if (sel.is_member(meta / 100000)) {
+            filter = {i, i + 10};
+            if (sel.is_member(meta % 100007)) {
                 ans = true;
             }
             ++meta;
@@ -69,18 +71,20 @@ int main() {
     }
 
     // cost_bitmap_insert
-    RoaringBitmap bitmap(TOTAL);
+    // RoaringBitmap bitmap(TOTAL);
+    std::vector<bool> bitmap_v(TOTAL, false);
     {
         Timer timer("cost_bitmap_insert");
 
         for (int i = 0; i < TOTAL; ++i) {
-            bitmap.add(i + 1000);
+            // bitmap.add(i + 1000);
+            bitmap_v[i % (TOTAL - 7)] = true;
         }
     }
 
     // cost_bitmap_search
     {
-        BitMapSelector sel(&bitmap);
+        BitMapVectorSelector sel(&bitmap_v);
         Timer timer("cost_bitmap_search");
 
         bool ans = false;

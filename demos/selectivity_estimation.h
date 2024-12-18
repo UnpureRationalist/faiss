@@ -5,6 +5,7 @@
 #include "faiss/MetricType.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -377,28 +378,41 @@ class ClusterScalarHistogram : public Histogram {
         //     sample_count);
         // }
         histograms_.reserve(k);
+        cluster_rates_.reserve(k);
         for (int i = 0; i < k; ++i) {
             histograms_.emplace_back(
                     clusters[i],
                     1.0,
                     std::min(b, static_cast<int>(clusters[i].size())));
+            cluster_rates_.emplace_back(
+                    1.0 * clusters[i].size() / sample_count);
         }
+
+        // for (const auto& rate : cluster_rates_) {
+        //     printf("%lf ", rate);
+        // }
+        // printf("\n");
     }
 
     virtual double EstimateSelectivity(
             const std::pair<int, int>& filter,
             const float* x) const {
-        faiss::idx_t label;
-        float distance;
-        index_.search(1, x, 1, &distance, &label);
-        if (label < 0 || label >= histograms_.size()) {
-            printf("Error when query vector!\n");
-            abort();
+        const int k = std::min(3, static_cast<int>(histograms_.size()));
+        std::vector<faiss::idx_t> labels(k);
+        std::vector<float> distances(k);
+        index_.search(1, x, k, distances.data(), labels.data());
+        double sel = 0.0;
+        double rate = 0.0;
+        for (const auto& idx : labels) {
+            sel += histograms_[idx].EstimateSelectivity(filter) *
+                    cluster_rates_[idx];
+            rate += cluster_rates_[idx];
         }
-        return histograms_[label].EstimateSelectivity(filter);
+        return sel / rate;
     }
 
    private:
     faiss::IndexFlatL2 index_;
     std::vector<SingleColumnEqualHeightHistogram> histograms_;
+    std::vector<double> cluster_rates_;
 };

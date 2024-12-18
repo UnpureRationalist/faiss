@@ -16,7 +16,7 @@ static std::unordered_map<std::string, std::vector<std::string>> name2path{
          {"sift1M/sift_learn.fvecs",
           "sift1M/sift_base.fvecs",
           "sift1M/sift_query.fvecs",
-          //   "sift1M/sift_groundtruth.ivecs",
+          // "sift1M/sift_groundtruth.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/hq_result_SIFT.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/scalar_SIFT.column",
           "/home/ubuntu/ANN_datasets/hybrid_query/query_filter_SIFT.pairs"}},
@@ -24,7 +24,7 @@ static std::unordered_map<std::string, std::vector<std::string>> name2path{
          {"/home/ubuntu/ANN_datasets/gist/gist_learn.fvecs",
           "/home/ubuntu/ANN_datasets/gist/gist_base.fvecs",
           "/home/ubuntu/ANN_datasets/gist/gist_query.fvecs",
-          //   "/home/ubuntu/ANN_datasets/gist/gist_groundtruth.ivecs",
+          // "/home/ubuntu/ANN_datasets/gist/gist_groundtruth.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/hq_result_GIST.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/scalar_GIST.column",
           "/home/ubuntu/ANN_datasets/hybrid_query/query_filter_GIST.pairs"}},
@@ -32,7 +32,7 @@ static std::unordered_map<std::string, std::vector<std::string>> name2path{
          {"/home/ubuntu/ANN_datasets/Cluster1M_query.fvecs",
           "/home/ubuntu/ANN_datasets/Cluster1M_base.fvecs",
           "/home/ubuntu/ANN_datasets/Cluster1M_query.fvecs",
-          //   "/home/ubuntu/ANN_datasets/Cluster1M_groundtruth.ivecs",
+          // "/home/ubuntu/ANN_datasets/Cluster1M_groundtruth.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/hq_result_Cluster.ivecs",
           "/home/ubuntu/ANN_datasets/hybrid_query/scalar_Cluster.column",
           "/home/ubuntu/ANN_datasets/hybrid_query/query_filter_Cluster.pairs"}}};
@@ -46,7 +46,7 @@ class HybridDataset {
             scalar2idx_.emplace_back(scalars_[i], i);
         }
         std::sort(scalar2idx_.begin(), scalar2idx_.end());
-        printf("build index on scalar column successfully\n");
+        // printf("build index on scalar column successfully\n");
     }
 
    public:
