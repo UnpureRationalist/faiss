@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdio>
 #include <string>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "faiss/MetricType.h"
 #include "file_reader.h"
 
 static std::unordered_map<std::string, std::vector<std::string>> name2path{
@@ -209,6 +211,25 @@ class HybridDataset {
 
     const int* GetGroundTruth() const {
         return ground_truth_;
+    }
+
+    double GetRecall(int i, const faiss::idx_t* I, size_t search_k) const {
+        std::unordered_set<faiss::idx_t> knn;
+        for (int j = 0; j < k_; ++j) {
+            knn.insert(static_cast<faiss::idx_t>(ground_truth_[i * k_ + j]));
+        }
+        const auto end_iter = knn.end();
+        int cnt = 0;
+        for (int j = 0; j < search_k; j++) {
+            if (knn.find(I[j]) != end_iter) {
+                ++cnt;
+            }
+            if (cnt == k_) {
+                break;
+            }
+        }
+        double recall = cnt / (1.0 * k_);
+        return recall;
     }
 
     double GetRecall(const faiss::idx_t* I, size_t search_k) const {
