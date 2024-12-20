@@ -1,5 +1,6 @@
 #include "demos/selectivity_estimation.h"
 #include "faiss/Index.h"
+#include "faiss/IndexHNSW.h"
 #include "faiss/IndexNSG.h"
 #include "faiss/MetricType.h"
 #include "faiss/impl/HNSW.h"
@@ -21,7 +22,7 @@
 #include <faiss/AutoTune.h>
 #include <faiss/index_factory.h>
 
-std::vector<int> GetExpectSelQueryIndex(
+std::vector<std::vector<int>> GetExpectSelQueryIndex(
         const std::vector<double>& expect_sel_lst,
         const HybridDataset& dataset) {
     const std::vector<std::pair<int, int>>& queries = dataset.GetQueryFilters();
@@ -34,8 +35,7 @@ std::vector<int> GetExpectSelQueryIndex(
 
     int n_sel = expect_sel_lst.size();
 
-    std::vector<int> query_index_lst(n_sel, -1);
-    int found_query_cnt = 0;
+    std::vector<std::vector<int>> query_index_lst(n_sel);
 
     for (int q = 0; q < nq; ++q) {
         const std::pair<int, int>& filter = queries[q];
@@ -50,27 +50,17 @@ std::vector<int> GetExpectSelQueryIndex(
         // printf("q = %d, sel = %lf\n", q, sel);
         int found_idx = -1;
         for (int i = 0; i < n_sel; ++i) {
-            if (query_index_lst[i] != -1) {
-                continue;
-            }
             double expect_sel = expect_sel_lst[i];
-            if (std::abs(expect_sel - sel) < 5e-4) {
+            if (std::abs(expect_sel - sel) < 3e-3) {
                 found_idx = i;
-                ++found_query_cnt;
-            }
-        }
-        if (found_idx != -1) {
-            query_index_lst[found_idx] = q;
-
-            if (found_query_cnt == n_sel) {
                 break;
             }
         }
+        if (found_idx != -1) {
+            query_index_lst[found_idx].push_back(q);
+        }
     }
-    if (found_query_cnt != n_sel) {
-        printf("can not find target sel in queries!\n");
-        abort();
-    }
+
     return query_index_lst;
 }
 
@@ -277,7 +267,7 @@ int SearchPlanCDEParam(
 
 int main() {
     std::vector<double> sel_lst{
-            0.001, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99};
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99};
 
     const std::string dataset_name("Cluster");
 
@@ -287,17 +277,22 @@ int main() {
     const int n = dataset.GetBaseNum();
     const std::vector<int>& scalars = dataset.GetScalars();
 
-    std::vector<int> query_index_lst = GetExpectSelQueryIndex(sel_lst, dataset);
+    std::vector<std::vector<int>> query_index_array =
+            GetExpectSelQueryIndex(sel_lst, dataset);
 
-    for (const int& query_idx : query_index_lst) {
-        const std::pair<int, int>& filter = dataset.GetQueryFilter(query_idx);
-        int cnt = 0;
-        for (const auto& elem : scalars) {
-            if (elem >= filter.first && elem <= filter.second) {
-                ++cnt;
+    for (const std::vector<int>& query_index_lst : query_index_array) {
+        for (const int& query_idx : query_index_lst) {
+            const std::pair<int, int>& filter =
+                    dataset.GetQueryFilter(query_idx);
+            int cnt = 0;
+            for (const auto& elem : scalars) {
+                if (elem >= filter.first && elem <= filter.second) {
+                    ++cnt;
+                }
             }
+            double sel = 1.0 * cnt / n;
+            // printf("sel = %lf\n", sel);
         }
-        double sel = 1.0 * cnt / n;
     }
 
     const double target_recall = 0.9;
@@ -326,41 +321,66 @@ int main() {
 
     faiss::Index* index = GetVectorIndex(dataset_name, index_key, dataset);
 
+    faiss::IndexHNSW *hnsw = dynamic_cast<faiss::IndexHNSW *>(index);
+    if (hnsw) {
+        printf("efConstruction = %d\n", hnsw->hnsw.efConstruction);
+        return 0;
+    }
+
     // plan B - F
     {
         std::vector<faiss::idx_t> labels(k);
         // plan B
-        for (int i = 0; i < query_index_lst.size(); ++i) {
-            int q = query_index_lst[i];
-            double sel = sel_lst[i];
-            double start = elapsed();
-            // search param to reach to target_recall
+        for (int j = 0; j < sel_lst.size(); ++j) {
+            const auto& query_index_lst = query_index_array[j];
+            double sel = sel_lst[j];
+            printf("doing query. sel = %lf, num_query = %zu\n",
+                   sel,
+                   query_index_lst.size());
 
-            std::pair<int, int> search_param =
-                    SearchPlanBParam(q, dataset, index, k, sel, target_recall);
+            double duration = 0.0;
 
-            // printf("found param... sel = %lf, found k_adjust = %d,
-            // found
-            // search_l = %d\n",
-            //        sel,
-            //        search_param.first,
-            //        search_param.second);
+            for (int i = 0; i < query_index_lst.size(); ++i) {
+                int q = query_index_lst[i];
 
-            for (int run = 0; run < run_times; ++run) {
-                plan_b(q,
-                       dataset,
-                       index,
-                       search_param.first,
-                       search_param.second,
-                       labels.data());
+                // search param to reach to target_recall
+
+                std::pair<int, int> search_param = SearchPlanBParam(
+                        q, dataset, index, k, sel, target_recall);
+
+                // printf("found param... sel = %lf, found k_adjust = %d,
+                // found
+                // search_l = %d\n",
+                //        sel,
+                //        search_param.first,
+                //        search_param.second);
+                double start = elapsed();
+                for (int run = 0; run < run_times; ++run) {
+                    plan_b(q,
+                           dataset,
+                           index,
+                           search_param.first,
+                           search_param.second,
+                           labels.data());
+                }
+
+                double end = elapsed();
+
+                duration += end - start;
+
+                // double recall = dataset.GetRecall(q, labels.data(), k);
+
+                // long long avg = (end - start) * 1e6 / run_times;
+                // printf("plan = B, sel = %lf, time = %lld, recall = %lf\n",
+                //        sel,
+                //        avg,
+                //        recall);
             }
-
-            double recall = dataset.GetRecall(q, labels.data(), k);
-
-            double end = elapsed();
-            long long avg = (end - start) * 1e6 / run_times;
+            long long avg = duration * 1e6 / query_index_lst.size() / run_times;
+            double recall =
+                    dataset.GetRecall(query_index_lst.back(), labels.data(), k);
             printf("plan = B, sel = %lf, time = %lld, recall = %lf\n",
-                   sel_lst[i],
+                   sel,
                    avg,
                    recall);
         }
@@ -370,28 +390,41 @@ int main() {
         // plan C
         std::vector<faiss::idx_t> labels(k);
         std::vector<float> distances(k);
+        for (int j = 0; j < sel_lst.size(); ++j) {
+            const auto& query_index_lst = query_index_array[j];
+            double sel = sel_lst[j];
+            printf("doing query. sel = %lf, num_query = %zu\n",
+                   sel,
+                   query_index_lst.size());
 
-        for (int i = 0; i < query_index_lst.size(); ++i) {
-            int q = query_index_lst[i];
-            double sel = sel_lst[i];
-            double start = elapsed();
-            // search param to reach to target_recall
-            int search_l = SearchPlanCDEParam(
-                    'C', q, dataset, index, k, sel, target_recall);
-            for (int run = 0; run < run_times; ++run) {
-                plan_c(q,
-                       dataset,
-                       index,
-                       search_l,
-                       labels.data(),
-                       distances.data());
+            double duration = 0.0;
+
+            for (int i = 0; i < query_index_lst.size(); ++i) {
+                int q = query_index_lst[i];
+
+                // search param to reach to target_recall
+                int search_l = SearchPlanCDEParam(
+                        'C', q, dataset, index, k, sel, target_recall);
+
+                double start = elapsed();
+                for (int run = 0; run < run_times; ++run) {
+                    plan_c(q,
+                           dataset,
+                           index,
+                           search_l,
+                           labels.data(),
+                           distances.data());
+                }
+                double end = elapsed();
+
+                duration += end - start;
             }
-            double recall = dataset.GetRecall(q, labels.data(), k);
 
-            double end = elapsed();
-            long long avg = (end - start) * 1e6 / run_times;
+            long long avg = duration * 1e6 / query_index_lst.size() / run_times;
+            double recall =
+                    dataset.GetRecall(query_index_lst.back(), labels.data(), k);
             printf("plan = C, sel = %lf, time = %lld, recall = %lf\n",
-                   sel_lst[i],
+                   sel,
                    avg,
                    recall);
         }
@@ -402,27 +435,43 @@ int main() {
         std::vector<faiss::idx_t> labels(k);
         std::vector<float> distances(k);
 
-        for (int i = 0; i < query_index_lst.size(); ++i) {
-            int q = query_index_lst[i];
-            double sel = sel_lst[i];
-            double start = elapsed();
-            // search param to reach to target_recall
-            int search_l = SearchPlanCDEParam(
-                    'D', q, dataset, index, k, sel, target_recall);
-            for (int run = 0; run < run_times; ++run) {
-                plan_d(q,
-                       dataset,
-                       index,
-                       search_l,
-                       labels.data(),
-                       distances.data());
-            }
-            double recall = dataset.GetRecall(q, labels.data(), k);
+        for (int j = 0; j < sel_lst.size(); ++j) {
+            const auto& query_index_lst = query_index_array[j];
+            double sel = sel_lst[j];
+            printf("doing query. sel = %lf, num_query = %zu\n",
+                   sel,
+                   query_index_lst.size());
 
-            double end = elapsed();
-            long long avg = (end - start) * 1e6 / run_times;
+            double duration = 0.0;
+
+            for (int i = 0; i < query_index_lst.size(); ++i) {
+                int q = query_index_lst[i];
+                double sel = sel_lst[i];
+
+                // search param to reach to target_recall
+                int search_l = SearchPlanCDEParam(
+                        'D', q, dataset, index, k, sel, target_recall);
+
+                double start = elapsed();
+
+                for (int run = 0; run < run_times; ++run) {
+                    plan_d(q,
+                           dataset,
+                           index,
+                           search_l,
+                           labels.data(),
+                           distances.data());
+                }
+                double end = elapsed();
+
+                duration += end - start;
+            }
+
+            long long avg = duration * 1e6 / query_index_lst.size() / run_times;
+            double recall =
+                    dataset.GetRecall(query_index_lst.back(), labels.data(), k);
             printf("plan = D, sel = %lf, time = %lld, recall = %lf\n",
-                   sel_lst[i],
+                   sel,
                    avg,
                    recall);
         }
@@ -433,27 +482,42 @@ int main() {
         std::vector<faiss::idx_t> labels(k);
         std::vector<float> distances(k);
 
-        for (int i = 0; i < query_index_lst.size(); ++i) {
-            int q = query_index_lst[i];
-            double sel = sel_lst[i];
-            double start = elapsed();
-            // search param to reach to target_recall
-            int search_l = SearchPlanCDEParam(
-                    'E', q, dataset, index, k, sel, target_recall);
-            for (int run = 0; run < run_times; ++run) {
-                plan_e(q,
-                       dataset,
-                       index,
-                       search_l,
-                       labels.data(),
-                       distances.data());
-            }
-            double recall = dataset.GetRecall(q, labels.data(), k);
+        for (int j = 0; j < sel_lst.size(); ++j) {
+            const auto& query_index_lst = query_index_array[j];
+            double sel = sel_lst[j];
+            printf("doing query. sel = %lf, num_query = %zu\n",
+                   sel,
+                   query_index_lst.size());
 
-            double end = elapsed();
-            long long avg = (end - start) * 1e6 / run_times;
+            double duration = 0.0;
+
+            for (int i = 0; i < query_index_lst.size(); ++i) {
+                int q = query_index_lst[i];
+                double sel = sel_lst[i];
+
+                // search param to reach to target_recall
+                int search_l = SearchPlanCDEParam(
+                        'E', q, dataset, index, k, sel, target_recall);
+
+                double start = elapsed();
+
+                for (int run = 0; run < run_times; ++run) {
+                    plan_e(q,
+                           dataset,
+                           index,
+                           search_l,
+                           labels.data(),
+                           distances.data());
+                }
+                double end = elapsed();
+
+                duration += end - start;
+            }
+            long long avg = duration * 1e6 / query_index_lst.size() / run_times;
+            double recall =
+                    dataset.GetRecall(query_index_lst.back(), labels.data(), k);
             printf("plan = E, sel = %lf, time = %lld, recall = %lf\n",
-                   sel_lst[i],
+                   sel,
                    avg,
                    recall);
         }
