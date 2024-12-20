@@ -321,11 +321,11 @@ int main() {
 
     faiss::Index* index = GetVectorIndex(dataset_name, index_key, dataset);
 
-    faiss::IndexHNSW *hnsw = dynamic_cast<faiss::IndexHNSW *>(index);
-    if (hnsw) {
-        printf("efConstruction = %d\n", hnsw->hnsw.efConstruction);
-        return 0;
-    }
+    // faiss::IndexHNSW *hnsw = dynamic_cast<faiss::IndexHNSW *>(index);
+    // if (hnsw) {
+    //     printf("efConstruction = %d\n", hnsw->hnsw.efConstruction);
+    //     return 0;
+    // }
 
     // plan B - F
     {
